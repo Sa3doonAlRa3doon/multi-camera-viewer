@@ -28,6 +28,14 @@ function saveHidden() { localStorage.setItem("hiddenCameras", JSON.stringify([..
 
 function streamUrl(camera) { return `/api/cameras/${encodeURIComponent(camera.id)}/stream?t=${Date.now()}`; }
 
+function cameraVideoSummary(camera) {
+  const resolution = camera.target_width && camera.target_height ? `${camera.target_width}×${camera.target_height}` : "source size";
+  const fps = camera.target_fps ? `${camera.target_fps} FPS` : "source FPS";
+  const rotation = { 90: "90° right", 180: "180°", 270: "90° left" }[camera.rotation] || "no rotation";
+  const flip = { horizontal: "mirrored", vertical: "vertical flip", both: "both flips" }[camera.flip] || "no flip";
+  return `${resolution} · ${fps} · ${rotation} · ${flip}`;
+}
+
 function showToast(message) {
   const toast = $("#toast");
   toast.textContent = message;
@@ -128,7 +136,8 @@ function renderGrid() {
     image.src = streamUrl(camera);
     image.addEventListener("error", () => setTimeout(() => { image.src = streamUrl(camera); }, 2000));
     card.querySelector(".camera-title").textContent = camera.name;
-    card.querySelector(".camera-type").textContent = camera.source_type === "usb" ? "USB camera" : `${camera.source_type.toUpperCase()} stream`;
+    const kind = camera.source_type === "usb" ? "USB camera" : `${camera.source_type.toUpperCase()} stream`;
+    card.querySelector(".camera-type").textContent = `${kind} · ${cameraVideoSummary(camera)}`;
     card.querySelector(".snapshot").addEventListener("click", () => saveScreenshot(camera, image));
     card.querySelector(".record").addEventListener("click", event => toggleRecording(camera, image, event.currentTarget));
     card.querySelector(".fullscreen").addEventListener("click", () => card.requestFullscreen?.());
@@ -158,7 +167,8 @@ function renderSettings() {
     const meta = document.createElement("div");
     const name = document.createElement("strong"); name.textContent = camera.name;
     const source = document.createElement("small"); source.textContent = camera.source || "Private stream URL configured";
-    meta.append(name, document.createElement("br"), source);
+    const video = document.createElement("small"); video.textContent = cameraVideoSummary(camera);
+    meta.append(name, document.createElement("br"), source, document.createElement("br"), video);
     const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = !state.hidden.has(camera.id); toggle.title = "Show in grid";
     toggle.addEventListener("change", () => { toggle.checked ? state.hidden.delete(camera.id) : state.hidden.add(camera.id); saveHidden(); renderGrid(); });
     const actions = document.createElement("div"); actions.className = "setting-actions";
@@ -193,6 +203,10 @@ function updateTypeHelp() {
   $("#camera-source").placeholder = type === "usb" ? "0" : `${type}://camera-address/stream`;
 }
 
+function updateResolutionFields() {
+  $("#custom-resolution").hidden = $("#camera-resolution").value !== "custom";
+}
+
 function openCameraDialog(camera = null) {
   $("#camera-form").reset(); $("#form-error").textContent = "";
   $("#camera-id").value = camera?.id || "";
@@ -203,13 +217,25 @@ function openCameraDialog(camera = null) {
   $("#camera-source").required = !camera;
   $("#camera-source").placeholder = camera?.source_configured ? "Leave blank to keep the saved private URL" : "0";
   $("#camera-enabled").checked = camera?.enabled ?? true;
-  updateTypeHelp(); dialog.showModal();
+  const resolution = camera?.target_width && camera?.target_height ? `${camera.target_width}x${camera.target_height}` : "0x0";
+  const resolutionOption = [...$("#camera-resolution").options].some(option => option.value === resolution);
+  $("#camera-resolution").value = resolutionOption ? resolution : "custom";
+  $("#camera-width").value = camera?.target_width || 1280;
+  $("#camera-height").value = camera?.target_height || 720;
+  $("#camera-fps").value = camera?.target_fps ?? 0;
+  $("#camera-rotation").value = String(camera?.rotation ?? 0);
+  $("#camera-flip").value = camera?.flip || "none";
+  updateTypeHelp(); updateResolutionFields(); dialog.showModal();
 }
 
 async function saveCamera(event) {
   event.preventDefault();
   const id = $("#camera-id").value;
   const clear = $("#clear-credentials").checked;
+  const selectedResolution = $("#camera-resolution").value;
+  const [width, height] = selectedResolution === "custom"
+    ? [Number($("#camera-width").value), Number($("#camera-height").value)]
+    : selectedResolution.split("x").map(Number);
   const payload = {
     name: $("#camera-name").value,
     source_type: $("#camera-type").value,
@@ -217,6 +243,11 @@ async function saveCamera(event) {
     username: $("#camera-username").value,
     password: $("#camera-password").value,
     enabled: $("#camera-enabled").checked,
+    target_width: width,
+    target_height: height,
+    target_fps: Number($("#camera-fps").value),
+    rotation: Number($("#camera-rotation").value),
+    flip: $("#camera-flip").value,
     clear_username: clear,
     clear_password: clear,
   };
@@ -259,6 +290,6 @@ async function initialise() {
 $("#grid-size").addEventListener("input", (event) => { const columns = event.target.value; document.documentElement.style.setProperty("--grid-columns", columns); $("#grid-output").textContent = `${columns} column${columns === "1" ? "" : "s"}`; localStorage.setItem("gridColumns", columns); });
 $("#settings-toggle").addEventListener("click", () => setDrawer(true)); $("#settings-close").addEventListener("click", () => setDrawer(false)); $("#scrim").addEventListener("click", () => setDrawer(false));
 $("#add-camera").addEventListener("click", () => openCameraDialog()); document.querySelectorAll("[data-add-camera]").forEach(button => button.addEventListener("click", () => openCameraDialog()));
-$("#camera-type").addEventListener("change", updateTypeHelp); $("#camera-form").addEventListener("submit", saveCamera); $("#dialog-close").addEventListener("click", () => dialog.close()); $("#dialog-cancel").addEventListener("click", () => dialog.close());
+$("#camera-type").addEventListener("change", updateTypeHelp); $("#camera-resolution").addEventListener("change", updateResolutionFields); $("#camera-form").addEventListener("submit", saveCamera); $("#dialog-close").addEventListener("click", () => dialog.close()); $("#dialog-cancel").addEventListener("click", () => dialog.close());
 $("#detect-usb").addEventListener("click", detectUsb); $("#logout").addEventListener("click", async () => { await api("/logout", { method: "POST" }); location.href = "/login"; });
 initialise();

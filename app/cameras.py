@@ -67,6 +67,51 @@ def placeholder_frame(name: str, status: str, detail: str = "") -> bytes:
     return encoded.tobytes() if ok else b""
 
 
+def configure_capture(capture: Any, camera: dict[str, Any]) -> None:
+    """Request USB capture settings when the device/backend supports them."""
+    if camera.get("source_type", "usb") != "usb" or not hasattr(capture, "set"):
+        return
+    settings = (
+        (cv2.CAP_PROP_FRAME_WIDTH, int(camera.get("target_width", 0) or 0)),
+        (cv2.CAP_PROP_FRAME_HEIGHT, int(camera.get("target_height", 0) or 0)),
+        (cv2.CAP_PROP_FPS, int(camera.get("target_fps", 0) or 0)),
+    )
+    for property_id, value in settings:
+        if not value:
+            continue
+        try:
+            capture.set(property_id, value)
+        except Exception:
+            # Many camera drivers reject unsupported modes by returning False or raising.
+            # Output resizing and frame limiting below still provide predictable browser output.
+            pass
+
+
+def transform_frame(frame: np.ndarray, camera: dict[str, Any]) -> np.ndarray:
+    """Apply the saved output resolution, rotation, and flip to a captured frame."""
+    width = int(camera.get("target_width", 0) or 0)
+    height = int(camera.get("target_height", 0) or 0)
+    if width and height and (frame.shape[1] != width or frame.shape[0] != height):
+        shrinking = width < frame.shape[1] or height < frame.shape[0]
+        interpolation = cv2.INTER_AREA if shrinking else cv2.INTER_LINEAR
+        frame = cv2.resize(frame, (width, height), interpolation=interpolation)
+
+    rotation = int(camera.get("rotation", 0) or 0)
+    rotate_codes = {
+        90: cv2.ROTATE_90_CLOCKWISE,
+        180: cv2.ROTATE_180,
+        270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+    }
+    if rotation in rotate_codes:
+        frame = cv2.rotate(frame, rotate_codes[rotation])
+
+    flip = str(camera.get("flip", "none") or "none")
+    flip_codes = {"horizontal": 1, "vertical": 0, "both": -1}
+    if flip in flip_codes:
+        frame = cv2.flip(frame, flip_codes[flip])
+    return frame
+
+
 class CameraWorker:
     def __init__(self, camera: dict[str, Any], capture_factory: CaptureFactory = default_capture_factory) -> None:
         self.camera = dict(camera)
@@ -134,17 +179,26 @@ class CameraWorker:
                 capture = self.capture_factory(source, str(self.camera.get("source_type", "usb")))
                 if not capture or not capture.isOpened():
                     raise RuntimeError("Camera could not be opened")
+                configure_capture(capture, self.camera)
                 self._set_status("online", "")
                 delay = 1.0
+                target_fps = int(self.camera.get("target_fps", 0) or 0)
+                minimum_interval = 1.0 / target_fps if target_fps else 0.0
+                last_published = 0.0
                 while not self._stop.is_set():
                     ok, frame = capture.read()
                     if not ok or frame is None:
                         raise RuntimeError("Camera stopped sending frames")
+                    now = time.monotonic()
+                    if minimum_interval and now - last_published < minimum_interval:
+                        continue
+                    frame = transform_frame(frame, self.camera)
                     encoded_ok, encoded = cv2.imencode(
                         ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82]
                     )
                     if encoded_ok:
                         self._publish(encoded.tobytes())
+                        last_published = now
             except Exception as exc:  # Capture backends report failures through varied exception types.
                 self._reconnects += 1
                 self._set_status("disconnected", f"{exc}. Retrying in {int(delay)}s")

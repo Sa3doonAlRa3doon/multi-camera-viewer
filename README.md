@@ -10,6 +10,8 @@ Multi Camera Viewer is a self-hosted, authenticated camera dashboard for Windows
 - Detect USB cameras and use Windows camera indexes or Linux `/dev/video*` devices.
 - Accept RTSP, HTTP/HTTPS MJPEG, and other stream URLs supported by the installed OpenCV video backend.
 - Convert every working source to browser-compatible MJPEG locally.
+- Set a saved resolution and target FPS independently for every camera.
+- Rotate each feed 90° right, 90° left, or 180°, and flip it horizontally, vertically, or both ways.
 - Reconnect failed cameras independently with an increasing retry delay.
 - Preserve camera and port settings across restarts.
 - Save screenshots and recordings directly on the phone or computer viewing the dashboard—not on the Pi.
@@ -138,6 +140,17 @@ Use the full HTTP/HTTPS MJPEG or video-stream URL. Snapshot-only JPEG URLs are n
 
 Use each camera's **Show in grid** switch to swap visible cameras without deleting them. Move the Grid slider from one to four columns. Choose **Fullscreen** on a card for a single-camera view; exit with `Esc`.
 
+### Resolution, FPS, rotation, and flip
+
+The Add/Edit Camera dialog saves video adjustments separately for each camera:
+
+- **Output resolution:** keep the source/original size, choose a common preset from 640 × 480 through 4K, or enter a custom width and height from 160 × 120 through 3840 × 2160.
+- **Target FPS:** enter `0` to keep the source rate, or cap browser delivery from 1 through 60 frames per second. This can reduce Pi CPU and network use, but it cannot create frames beyond the camera's actual frame rate.
+- **Rotate:** normal, 90° right, 90° left, or 180° upside down.
+- **Flip:** none, horizontal/mirror, vertical, or both horizontal and vertical.
+
+For USB cameras, the viewer asks the device driver for the selected resolution and FPS when supported. It also resizes and frame-limits the browser output, so the selected output still applies when a driver or a network stream ignores the request. Resizing occurs before rotation, so a 1280 × 720 image rotated 90° is displayed as 720 × 1280. Flipping is applied after rotation using the displayed image's horizontal and vertical directions. These adjustments also appear in client-side screenshots and recordings.
+
 ### Screenshots and recordings
 
 Each camera card has **Screenshot**, **Record**, and **Fullscreen** controls.
@@ -213,7 +226,7 @@ Linux/Raspberry Pi OS:
 
 - **Camera stays disconnected:** verify its USB device/index or network URL in Settings. Test network reachability and credentials. The status badge shows the latest failure and retry delay.
 - **RTSP opens in the vendor app but not here:** try the camera's substream, H.264 mode, or TCP-compatible RTSP URL. Codec support depends on the OpenCV/FFmpeg components available for the platform. H.265 support varies.
-- **High Raspberry Pi CPU use:** reduce camera resolution/frame rate at the camera, use substreams, or display fewer simultaneous feeds. Every active source is decoded and re-encoded as MJPEG.
+- **High Raspberry Pi CPU use:** choose a lower output resolution and target FPS in Edit Camera, use the camera's lower-resolution substream, or display fewer simultaneous feeds. Every active source is decoded and re-encoded as MJPEG.
 - **USB camera is busy:** close video-call, browser, or recording applications that may own it, then refresh detection or restart the viewer.
 - **Remote page does not open:** confirm the printed LAN/Tailscale address is still assigned, the service is running, and the selected port is allowed through the host firewall.
 - **No Tailscale URL is printed:** install Tailscale separately, sign in, connect it on both the Pi/server and viewing device, and restart Multi Camera Viewer. The application binds to `0.0.0.0`, so a detected Tailscale IPv4 address is immediately usable unless a host firewall blocks the selected port.
@@ -233,7 +246,7 @@ Linux/Raspberry Pi OS:
 
 ## Verification
 
-The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, client-side capture controls, safe update archives, and private-data preservation during updates.
+The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, client-side capture controls, safe update archives, and private-data preservation during updates.
 
 Run it with:
 

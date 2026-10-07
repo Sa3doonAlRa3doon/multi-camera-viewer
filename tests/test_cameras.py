@@ -2,7 +2,7 @@ import time
 
 import numpy as np
 
-from app.cameras import CameraManager, CameraWorker, source_for_capture
+from app.cameras import CameraManager, CameraWorker, configure_capture, source_for_capture, transform_frame
 
 
 class FakeCapture:
@@ -10,6 +10,7 @@ class FakeCapture:
         self.frames = list(frames)
         self.opened = opened
         self.released = False
+        self.settings = []
 
     def isOpened(self):
         return self.opened
@@ -21,6 +22,10 @@ class FakeCapture:
 
     def release(self):
         self.released = True
+
+    def set(self, property_id, value):
+        self.settings.append((property_id, value))
+        return True
 
 
 def wait_for(predicate, timeout=3):
@@ -35,6 +40,32 @@ def wait_for(predicate, timeout=3):
 def test_network_credentials_are_injected_only_for_capture():
     source = source_for_capture({"source_type": "rtsp", "source": "rtsp://cam.local/live", "username": "a@b", "password": "p:q"})
     assert source == "rtsp://a%40b:p%3Aq@cam.local/live"
+
+
+def test_frame_rotation_and_flip_are_applied_in_display_order():
+    frame = np.arange(18, dtype=np.uint8).reshape(2, 3, 3)
+    rotated = transform_frame(frame, {"rotation": 90, "flip": "none"})
+    assert np.array_equal(rotated, np.rot90(frame, k=3))
+
+    transformed = transform_frame(frame, {"rotation": 270, "flip": "horizontal"})
+    expected = np.flip(np.rot90(frame, k=1), axis=1)
+    assert np.array_equal(transformed, expected)
+
+
+def test_resolution_and_usb_capture_settings_are_applied():
+    frame = np.zeros((20, 30, 3), dtype=np.uint8)
+    camera = {
+        "source_type": "usb",
+        "target_width": 640,
+        "target_height": 480,
+        "target_fps": 15,
+        "rotation": 0,
+        "flip": "vertical",
+    }
+    capture = FakeCapture([])
+    configure_capture(capture, camera)
+    assert [value for _, value in capture.settings] == [640, 480, 15]
+    assert transform_frame(frame, camera).shape == (480, 640, 3)
 
 
 def test_disconnected_camera_reconnects_and_publishes_frame():

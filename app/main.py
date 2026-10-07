@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -27,8 +27,21 @@ class CameraPayload(BaseModel):
     username: str = Field(default="", max_length=256)
     password: str = Field(default="", max_length=512)
     enabled: bool = True
+    target_width: int = Field(default=0, ge=0, le=3840)
+    target_height: int = Field(default=0, ge=0, le=2160)
+    target_fps: int = Field(default=0, ge=0, le=60)
+    rotation: Literal[0, 90, 180, 270] = 0
+    flip: Literal["none", "horizontal", "vertical", "both"] = "none"
     clear_username: bool = False
     clear_password: bool = False
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> "CameraPayload":
+        if bool(self.target_width) != bool(self.target_height):
+            raise ValueError("Resolution width and height must both be set, or both be 0 for source resolution.")
+        if self.target_width and (self.target_width < 160 or self.target_height < 120):
+            raise ValueError("Custom resolution must be at least 160 x 120.")
+        return self
 
 
 def _validated_camera(payload: CameraPayload, old: dict | None = None) -> dict:
@@ -51,6 +64,11 @@ def _validated_camera(payload: CameraPayload, old: dict | None = None) -> dict:
         "username": "" if values["clear_username"] else username,
         "password": "" if values["clear_password"] else password,
         "enabled": values["enabled"],
+        "target_width": values["target_width"],
+        "target_height": values["target_height"],
+        "target_fps": values["target_fps"],
+        "rotation": values["rotation"],
+        "flip": values["flip"],
     }
     if not source:
         raise HTTPException(status_code=422, detail="A camera device or stream URL is required.")

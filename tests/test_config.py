@@ -26,3 +26,8 @@ def test_public_camera_redacts_credentials_and_query_values(tmp_path):
     assert "secret" not in encoded
     assert public["source"] == "rtsp://host:554/live?token=REDACTED"
     assert public["has_password"] is True
+    assert public["target_width"] == 0
+    assert public["target_height"] == 0
+    assert public["target_fps"] == 0
+    assert public["rotation"] == 0
+    assert public["flip"] == "none"

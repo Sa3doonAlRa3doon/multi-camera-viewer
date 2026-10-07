@@ -103,6 +103,11 @@ class ConfigStore:
             "has_username": bool(camera.get("username")),
             "has_password": bool(camera.get("password")),
             "enabled": bool(camera.get("enabled", True)),
+            "target_width": int(camera.get("target_width", 0) or 0),
+            "target_height": int(camera.get("target_height", 0) or 0),
+            "target_fps": int(camera.get("target_fps", 0) or 0),
+            "rotation": int(camera.get("rotation", 0) or 0),
+            "flip": str(camera.get("flip", "none") or "none"),
         }
 
 
