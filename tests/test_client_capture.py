@@ -26,3 +26,13 @@ def test_camera_dialog_offers_saved_video_adjustments():
     assert 'value="180">180° upside down' in html
     assert "target_width: width" in javascript
     assert "target_fps: Number" in javascript
+
+
+def test_settings_drawer_offers_automatic_and_manual_startup_modes():
+    html = (ROOT / "app" / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="autostart-auto"' in html
+    assert 'id="autostart-manual"' in html
+    assert 'id="autostart-refresh"' in html
+    assert 'api("/api/autostart"' in javascript
+    assert 'JSON.stringify({ enabled })' in javascript

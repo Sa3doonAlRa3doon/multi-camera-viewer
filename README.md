@@ -19,6 +19,7 @@ Multi Camera Viewer is a self-hosted, authenticated camera dashboard for Windows
 - Show actual local, LAN, and Tailscale URLs at every launch.
 - Protect the dashboard with a password, signed session cookies, and CSRF protection.
 - Configure hidden Windows sign-in startup or a Linux systemd boot service.
+- Change between Automatic and Manual startup later from the authenticated Settings drawer.
 
 ## Requirements
 
@@ -196,7 +197,11 @@ To publish a new version as the maintainer, update the root `VERSION` file to a 
 
 ## Manual control and autostart
 
-Run these commands from the selected installation folder with its private Python interpreter.
+Open the right-side **Settings** drawer and use **Automatic startup → Automatic** or **Manual** to change the startup mode at any time. The status is read from the real Windows Task Scheduler entry or Linux systemd service—not only from a saved preference. Changing the mode does not interrupt the currently running viewer and takes effect on the next sign-in or boot.
+
+Windows can normally apply the selection immediately for the current user. Installing or changing a system service on Raspberry Pi OS/Linux requires administrator approval. The web Settings panel first attempts a safe non-interactive change; if approval is needed, it displays the exact command to run in the Pi terminal. Run that command, then select **Refresh startup status**. The terminal command uses the installed folder and its private Python environment.
+
+The same controls remain available from a terminal. Run these commands from the selected installation folder with its private Python interpreter.
 
 Windows:
 
@@ -205,7 +210,10 @@ Windows:
 .\.venv\Scripts\python.exe manage.py start
 .\.venv\Scripts\python.exe manage.py stop
 .\.venv\Scripts\python.exe manage.py enable-autostart
+# Disable and stop the registered service/task:
 .\.venv\Scripts\python.exe manage.py disable-autostart
+# Or disable future startup while keeping this session running:
+.\.venv\Scripts\python.exe manage.py disable-autostart --keep-running
 .\.venv\Scripts\python.exe manage.py remove-autostart
 ```
 
@@ -216,11 +224,14 @@ Linux/Raspberry Pi OS:
 ./.venv/bin/python manage.py start
 ./.venv/bin/python manage.py stop
 ./.venv/bin/python manage.py enable-autostart
+# Disable and stop the systemd service:
 ./.venv/bin/python manage.py disable-autostart
+# Or disable future startup while keeping this session running:
+./.venv/bin/python manage.py disable-autostart --keep-running
 ./.venv/bin/python manage.py remove-autostart
 ```
 
-`disable-autostart` disables and stops the registration. `remove-autostart` also removes it; on Linux it deletes the systemd unit after disabling it. On Windows both remove the scheduled task because Task Scheduler has no useful retained-but-disabled workflow in this installer.
+`disable-autostart` disables and stops the registration. Add `--keep-running` to change future startup without stopping the current Linux systemd service. `remove-autostart` also removes it; on Linux it deletes the systemd unit after disabling it. On Windows both remove the scheduled task because Task Scheduler has no useful retained-but-disabled workflow in this installer.
 
 ## Troubleshooting
 
@@ -246,7 +257,7 @@ Linux/Raspberry Pi OS:
 
 ## Verification
 
-The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, client-side capture controls, safe update archives, and private-data preservation during updates.
+The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, authenticated Automatic/Manual startup controls and Linux permission fallback, client-side capture controls, safe update archives, and private-data preservation during updates.
 
 Run it with:
 

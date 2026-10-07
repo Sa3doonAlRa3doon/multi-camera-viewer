@@ -5,6 +5,7 @@ from __future__ import annotations
 import getpass
 import os
 import platform
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -46,7 +47,16 @@ WantedBy=multi-user.target
 """
 
 
-def enable_autostart(root: Path) -> tuple[bool, str]:
+def _sudo(command: list[str], non_interactive: bool) -> list[str]:
+    return ["sudo", "-n", *command] if non_interactive else ["sudo", *command]
+
+
+def enable_autostart(
+    root: Path,
+    *,
+    start_now: bool = False,
+    non_interactive: bool = False,
+) -> tuple[bool, str]:
     system = platform.system()
     if system == "Windows":
         result = subprocess.run(windows_task_command(root), capture_output=True, text=True, check=False)
@@ -57,9 +67,12 @@ def enable_autostart(root: Path) -> tuple[bool, str]:
         service_source = root / "multi-camera-viewer.service"
         service_target = Path("/etc/systemd/system") / LINUX_SERVICE_NAME
         commands = [
-            ["sudo", "install", "-m", "644", str(service_source), str(service_target)],
-            ["sudo", "systemctl", "daemon-reload"],
-            ["sudo", "systemctl", "enable", "--now", LINUX_SERVICE_NAME],
+            _sudo(["install", "-m", "644", str(service_source), str(service_target)], non_interactive),
+            _sudo(["systemctl", "daemon-reload"], non_interactive),
+            _sudo(
+                ["systemctl", "enable", *(["--now"] if start_now else []), LINUX_SERVICE_NAME],
+                non_interactive,
+            ),
         ]
         for command in commands:
             result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -69,7 +82,13 @@ def enable_autostart(root: Path) -> tuple[bool, str]:
     return False, f"Automatic startup is not supported on {system}."
 
 
-def disable_autostart(root: Path, remove: bool = False) -> tuple[bool, str]:
+def disable_autostart(
+    root: Path,
+    remove: bool = False,
+    *,
+    stop_now: bool = True,
+    non_interactive: bool = False,
+) -> tuple[bool, str]:
     del root
     system = platform.system()
     if system == "Windows":
@@ -77,12 +96,15 @@ def disable_autostart(root: Path, remove: bool = False) -> tuple[bool, str]:
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         return result.returncode == 0, (result.stderr or result.stdout).strip()
     if system == "Linux":
-        command = ["sudo", "systemctl", "disable", "--now", LINUX_SERVICE_NAME]
+        command = _sudo(
+            ["systemctl", "disable", *(["--now"] if stop_now else []), LINUX_SERVICE_NAME],
+            non_interactive,
+        )
         result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode == 0 and remove:
             target = Path("/etc/systemd/system") / LINUX_SERVICE_NAME
-            subprocess.run(["sudo", "rm", "-f", str(target)], check=False)
-            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=False)
+            subprocess.run(_sudo(["rm", "-f", str(target)], non_interactive), check=False)
+            subprocess.run(_sudo(["systemctl", "daemon-reload"], non_interactive), check=False)
         return result.returncode == 0, (result.stderr or result.stdout).strip()
     return False, f"Automatic startup is not supported on {system}."
 
@@ -102,3 +124,28 @@ def autostart_status() -> str:
         )
         return "enabled (system boot)" if result.returncode == 0 else "disabled"
     return "unsupported"
+
+
+def autostart_info() -> dict[str, object]:
+    system = platform.system()
+    status = autostart_status()
+    descriptions = {
+        "Windows": "Automatic starts at user sign-in using Windows Task Scheduler.",
+        "Linux": "Automatic starts at system boot using a systemd service.",
+    }
+    return {
+        "enabled": status.startswith("enabled"),
+        "status": status,
+        "platform": system,
+        "description": descriptions.get(system, f"Automatic startup is not supported on {system}."),
+        "supported": system in {"Windows", "Linux"},
+    }
+
+
+def autostart_terminal_command(root: Path, enabled: bool) -> str:
+    if platform.system() == "Windows":
+        command = "enable-autostart" if enabled else "disable-autostart --keep-running"
+        return rf'.\.venv\Scripts\python.exe manage.py {command}'
+    command = "enable-autostart" if enabled else "disable-autostart --keep-running"
+    linux_root = str(root).replace("\\", "/")
+    return f"cd {shlex.quote(linux_root)} && ./.venv/bin/python manage.py {command}"

@@ -82,6 +82,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Manage Multi Camera Viewer")
     parser.add_argument("command", choices=["start", "stop", "status", "check-update", "update", "enable-autostart", "disable-autostart", "remove-autostart"])
     parser.add_argument("--force", action="store_true", help="Reinstall the current remote version")
+    parser.add_argument("--keep-running", action="store_true", help="Change future autostart without stopping the current viewer")
     args = parser.parse_args()
     root = application_home()
     if args.command == "start":
@@ -133,13 +134,13 @@ def main() -> int:
                 print("The existing viewer was restarted.")
             return 1
     if args.command == "enable-autostart":
-        ok, detail = enable_autostart(root)
+        ok, detail = enable_autostart(root, start_now=False)
         if ok:
             update_autostart(root, True, detail)
         print(detail)
         return 0 if ok else 1
     remove = args.command == "remove-autostart"
-    ok, detail = disable_autostart(root, remove=remove)
+    ok, detail = disable_autostart(root, remove=remove, stop_now=not args.keep_running)
     if ok:
         update_autostart(root, False, "none")
     print(detail)

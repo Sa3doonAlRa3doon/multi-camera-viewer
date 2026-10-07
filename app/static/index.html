@@ -35,6 +35,20 @@
     <button id="detect-usb" class="wide">Detect USB cameras</button>
     <div id="detected-list" class="detected-list"></div>
     <div id="camera-list" class="camera-list"></div>
+    <section class="startup-settings" aria-labelledby="startup-title">
+      <h3 id="startup-title">Automatic startup</h3>
+      <p id="autostart-description">Checking the current startup mode…</p>
+      <div class="startup-options" role="group" aria-label="Startup mode">
+        <button id="autostart-auto" type="button">Automatic</button>
+        <button id="autostart-manual" type="button">Manual</button>
+      </div>
+      <p id="autostart-status" class="help" role="status"></p>
+      <div id="autostart-command-wrap" class="admin-command" hidden>
+        <p>Administrator approval is required. Run this in the Pi/Linux terminal, then press Refresh:</p>
+        <code id="autostart-command"></code>
+      </div>
+      <button id="autostart-refresh" type="button" class="wide ghost">Refresh startup status</button>
+    </section>
     <div class="drawer-footer"><button id="logout" class="danger ghost">Sign out</button></div>
   </aside>
   <div id="scrim" class="scrim" hidden></div>

@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { csrf: "", cameras: [], hidden: new Set(JSON.parse(localStorage.getItem("hiddenCameras") || "[]")) };
+const state = { csrf: "", cameras: [], autostart: null, hidden: new Set(JSON.parse(localStorage.getItem("hiddenCameras") || "[]")) };
 const recordings = new Map();
 const $ = (selector) => document.querySelector(selector);
 const grid = $("#camera-grid");
@@ -178,6 +178,38 @@ function renderSettings() {
   }
 }
 
+function renderAutostart(info) {
+  state.autostart = info;
+  $("#autostart-description").textContent = info.description;
+  $("#autostart-status").textContent = `Current mode: ${info.enabled ? "Automatic" : "Manual"} (${info.status})`;
+  $("#autostart-auto").classList.toggle("selected", info.enabled);
+  $("#autostart-manual").classList.toggle("selected", !info.enabled);
+  $("#autostart-auto").disabled = !info.supported || info.enabled;
+  $("#autostart-manual").disabled = !info.supported || !info.enabled;
+  const showCommand = Boolean(info.command);
+  $("#autostart-command-wrap").hidden = !showCommand;
+  $("#autostart-command").textContent = info.command || "";
+}
+
+async function refreshAutostart() {
+  try { renderAutostart(await api("/api/autostart")); }
+  catch (error) { $("#autostart-status").textContent = error.message; }
+}
+
+async function changeAutostart(enabled) {
+  const buttons = [$("#autostart-auto"), $("#autostart-manual")];
+  buttons.forEach(button => { button.disabled = true; });
+  $("#autostart-status").textContent = enabled ? "Enabling automatic startup…" : "Switching to manual startup…";
+  try {
+    const info = await api("/api/autostart", { method: "POST", body: JSON.stringify({ enabled }) });
+    renderAutostart(info);
+    showToast(info.changed ? info.message : (info.requires_admin ? "Run the displayed terminal command to finish this change." : info.message));
+  } catch (error) {
+    $("#autostart-status").textContent = error.message;
+    if (state.autostart) renderAutostart(state.autostart);
+  }
+}
+
 async function refreshCameras(force = false) {
   const next = await api("/api/cameras");
   const changed = force || cameraFingerprint(next) !== cameraFingerprint(state.cameras);
@@ -283,7 +315,7 @@ async function initialise() {
   try {
     const session = await api("/api/session"); state.csrf = session.csrf_token; $("#version").textContent = `v${session.version}`;
     const savedColumns = Number(localStorage.getItem("gridColumns") || 2); $("#grid-size").value = String(savedColumns); document.documentElement.style.setProperty("--grid-columns", savedColumns); $("#grid-output").textContent = `${savedColumns} column${savedColumns === 1 ? "" : "s"}`;
-    await refreshCameras(true); setInterval(() => refreshCameras().catch(console.error), 2500);
+    await Promise.all([refreshCameras(true), refreshAutostart()]); setInterval(() => refreshCameras().catch(console.error), 2500);
   } catch (error) { console.error(error); }
 }
 
@@ -291,5 +323,6 @@ $("#grid-size").addEventListener("input", (event) => { const columns = event.tar
 $("#settings-toggle").addEventListener("click", () => setDrawer(true)); $("#settings-close").addEventListener("click", () => setDrawer(false)); $("#scrim").addEventListener("click", () => setDrawer(false));
 $("#add-camera").addEventListener("click", () => openCameraDialog()); document.querySelectorAll("[data-add-camera]").forEach(button => button.addEventListener("click", () => openCameraDialog()));
 $("#camera-type").addEventListener("change", updateTypeHelp); $("#camera-resolution").addEventListener("change", updateResolutionFields); $("#camera-form").addEventListener("submit", saveCamera); $("#dialog-close").addEventListener("click", () => dialog.close()); $("#dialog-cancel").addEventListener("click", () => dialog.close());
+$("#autostart-auto").addEventListener("click", () => changeAutostart(true)); $("#autostart-manual").addEventListener("click", () => changeAutostart(false)); $("#autostart-refresh").addEventListener("click", refreshAutostart);
 $("#detect-usb").addEventListener("click", detectUsb); $("#logout").addEventListener("click", async () => { await api("/logout", { method: "POST" }); location.href = "/login"; });
 initialise();

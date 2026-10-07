@@ -240,7 +240,7 @@ def main() -> int:
     write_launchers(target, python)
     protect_private_storage(target)
     if auto:
-        ok, detail = enable_autostart(target)
+        ok, detail = enable_autostart(target, start_now=True)
         settings["autostart"] = ok
         settings["autostart_kind"] = detail if ok else "registration failed"
         store.save_settings(settings)

@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.cameras import CameraManager
 from app.config import ConfigStore, new_settings
 from app.main import create_app
+import app.main as main_module
 
 
 def authenticated_client(tmp_path):
@@ -92,5 +93,73 @@ def test_camera_video_settings_are_validated(tmp_path):
             headers=headers,
         )
         assert invalid_fps.status_code == 422
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_autostart_can_be_changed_from_authenticated_settings(monkeypatch, tmp_path):
+    current = {"enabled": False}
+
+    def info():
+        enabled = current["enabled"]
+        return {
+            "enabled": enabled,
+            "status": "enabled (user sign-in)" if enabled else "disabled",
+            "platform": "Windows",
+            "description": "Automatic starts at user sign-in using Windows Task Scheduler.",
+            "supported": True,
+        }
+
+    def enable(_root, *, start_now, non_interactive):
+        assert start_now is False
+        assert non_interactive is True
+        current["enabled"] = True
+        return True, "Windows Task Scheduler (starts at user sign-in)"
+
+    monkeypatch.setattr(main_module, "autostart_info", info)
+    monkeypatch.setattr(main_module, "enable_autostart", enable)
+    store, client, headers = authenticated_client(tmp_path)
+    try:
+        initial = client.get("/api/autostart").json()
+        assert initial["enabled"] is False
+        changed = client.post("/api/autostart", json={"enabled": True}, headers=headers)
+        assert changed.status_code == 200
+        assert changed.json()["enabled"] is True
+        assert changed.json()["changed"] is True
+        assert store.load_settings()["autostart"] is True
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_linux_autostart_permission_fallback_is_returned(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        main_module,
+        "autostart_info",
+        lambda: {
+            "enabled": False,
+            "status": "disabled",
+            "platform": "Linux",
+            "description": "Automatic starts at system boot using a systemd service.",
+            "supported": True,
+        },
+    )
+    monkeypatch.setattr(
+        main_module,
+        "enable_autostart",
+        lambda _root, *, start_now, non_interactive: (False, "sudo: a password is required"),
+    )
+    monkeypatch.setattr(
+        main_module,
+        "autostart_terminal_command",
+        lambda _root, _enabled: "./.venv/bin/python manage.py enable-autostart",
+    )
+    _, client, headers = authenticated_client(tmp_path)
+    try:
+        response = client.post("/api/autostart", json={"enabled": True}, headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["changed"] is False
+        assert body["requires_admin"] is True
+        assert "manage.py enable-autostart" in body["command"]
     finally:
         client.__exit__(None, None, None)

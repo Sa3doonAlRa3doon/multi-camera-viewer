@@ -16,6 +16,12 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import __version__
 from .auth import csrf_token, require_auth, require_csrf, signed_in
+from .autostart import (
+    autostart_info,
+    autostart_terminal_command,
+    disable_autostart,
+    enable_autostart,
+)
 from .cameras import CameraManager, detect_usb_cameras, source_for_capture
 from .config import ConfigStore, verify_password
 
@@ -42,6 +48,10 @@ class CameraPayload(BaseModel):
         if self.target_width and (self.target_width < 160 or self.target_height < 120):
             raise ValueError("Custom resolution must be at least 160 x 120.")
         return self
+
+
+class AutostartPayload(BaseModel):
+    enabled: bool
 
 
 def _validated_camera(payload: CameraPayload, old: dict | None = None) -> dict:
@@ -156,6 +166,35 @@ def create_app(store: ConfigStore | None = None, manager: CameraManager | None =
             public["status"] = statuses.get(str(camera["id"]), {"state": "disabled", "detail": ""})
             result.append(public)
         return result
+
+    @app.get("/api/autostart")
+    async def get_autostart(_: None = Depends(require_auth)) -> dict:
+        return autostart_info()
+
+    @app.post("/api/autostart")
+    async def set_autostart(payload: AutostartPayload, _: None = Depends(require_csrf)) -> dict:
+        root = store.root
+        if payload.enabled:
+            ok, detail = await run_in_threadpool(
+                lambda: enable_autostart(root, start_now=False, non_interactive=True)
+            )
+        else:
+            ok, detail = await run_in_threadpool(
+                lambda: disable_autostart(root, stop_now=False, non_interactive=True)
+            )
+        current = autostart_info()
+        if ok:
+            settings = store.load_settings()
+            settings["autostart"] = bool(current["enabled"])
+            settings["autostart_kind"] = str(current["status"]) if current["enabled"] else "none"
+            store.save_settings(settings)
+        return {
+            **current,
+            "changed": ok,
+            "message": detail or ("Automatic startup enabled." if payload.enabled else "Manual startup selected."),
+            "requires_admin": not ok and current["platform"] == "Linux",
+            "command": autostart_terminal_command(root, payload.enabled) if not ok else "",
+        }
 
     @app.post("/api/cameras", status_code=201)
     async def add_camera(payload: CameraPayload, _: None = Depends(require_csrf)) -> dict:
