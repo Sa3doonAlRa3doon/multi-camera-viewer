@@ -6,11 +6,11 @@ from app.main import create_app
 import app.main as main_module
 
 
-def authenticated_client(tmp_path):
+def authenticated_client(tmp_path, active_port=None):
     store = ConfigStore(tmp_path)
     store.save_settings(new_settings(8080, "0.0.0.0", "admin", "password123"))
     store.save_cameras([])
-    client = TestClient(create_app(store, CameraManager()))
+    client = TestClient(create_app(store, CameraManager(), active_port=active_port))
     client.__enter__()
     response = client.post("/login", data={"username": "admin", "password": "password123"}, follow_redirects=False)
     assert response.status_code == 303
@@ -161,5 +161,67 @@ def test_linux_autostart_permission_fallback_is_returned(monkeypatch, tmp_path):
         assert body["changed"] is False
         assert body["requires_admin"] is True
         assert "manage.py enable-autostart" in body["command"]
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_network_settings_save_a_preferred_port_and_show_actual_urls(monkeypatch, tmp_path):
+    monkeypatch.setattr(main_module, "lan_addresses", lambda: ["192.0.2.20", "100.64.0.5"])
+    monkeypatch.setattr(main_module, "tailscale_addresses", lambda: ["100.64.0.5"])
+    monkeypatch.setattr(main_module, "is_port_available", lambda _host, port: port == 1010)
+    store, client, headers = authenticated_client(tmp_path, active_port=8080)
+    try:
+        response = client.post(
+            "/api/network",
+            json={"mode": "custom", "port": "1010"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["active_port"] == 8080
+        assert body["saved_port"] == 1010
+        assert body["restart_required"] is True
+        assert body["local_urls"] == ["http://127.0.0.1:8080"]
+        assert body["lan_urls"] == ["http://192.0.2.20:8080"]
+        assert body["tailscale_urls"] == ["http://100.64.0.5:8080"]
+        assert store.load_settings()["port"] == 1010
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_network_settings_validate_and_reject_an_occupied_custom_port(monkeypatch, tmp_path):
+    monkeypatch.setattr(main_module, "is_port_available", lambda _host, _port: False)
+    _, client, headers = authenticated_client(tmp_path, active_port=8080)
+    try:
+        invalid = client.post(
+            "/api/network",
+            json={"mode": "custom", "port": "101"},
+            headers=headers,
+        )
+        assert invalid.status_code == 422
+        assert "4-digit port number" in invalid.json()["detail"]
+        occupied = client.post(
+            "/api/network",
+            json={"mode": "custom", "port": "9090"},
+            headers=headers,
+        )
+        assert occupied.status_code == 409
+        assert "already occupied" in occupied.json()["detail"]
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_network_settings_can_choose_an_available_port_automatically(monkeypatch, tmp_path):
+    monkeypatch.setattr(main_module, "automatic_port", lambda host: 2020 if host == "0.0.0.0" else 3030)
+    store, client, headers = authenticated_client(tmp_path, active_port=8080)
+    try:
+        response = client.post(
+            "/api/network",
+            json={"mode": "automatic", "port": ""},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["saved_port"] == 2020
+        assert store.load_settings()["port"] == 2020
     finally:
         client.__exit__(None, None, None)

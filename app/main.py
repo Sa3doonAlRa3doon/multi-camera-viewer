@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import platform
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -24,6 +25,8 @@ from .autostart import (
 )
 from .cameras import CameraManager, detect_usb_cameras, source_for_capture
 from .config import ConfigStore, verify_password
+from .network import lan_addresses, tailscale_addresses
+from .ports import INVALID_PORT_MESSAGE, automatic_port, is_port_available, is_valid_custom_port
 
 
 class CameraPayload(BaseModel):
@@ -52,6 +55,11 @@ class CameraPayload(BaseModel):
 
 class AutostartPayload(BaseModel):
     enabled: bool
+
+
+class NetworkPayload(BaseModel):
+    mode: Literal["custom", "automatic"]
+    port: str = ""
 
 
 def _validated_camera(payload: CameraPayload, old: dict | None = None) -> dict:
@@ -89,9 +97,14 @@ def _validated_camera(payload: CameraPayload, old: dict | None = None) -> dict:
     return camera
 
 
-def create_app(store: ConfigStore | None = None, manager: CameraManager | None = None) -> FastAPI:
+def create_app(
+    store: ConfigStore | None = None,
+    manager: CameraManager | None = None,
+    active_port: int | None = None,
+) -> FastAPI:
     store = store or ConfigStore()
     settings = store.load_settings()
+    running_port = int(active_port if active_port is not None else settings.get("port", 8080))
     manager = manager or CameraManager()
     package_dir = Path(__file__).resolve().parent
 
@@ -112,6 +125,23 @@ def create_app(store: ConfigStore | None = None, manager: CameraManager | None =
     app.mount("/static", StaticFiles(directory=package_dir / "static"), name="static")
     app.state.store = store
     app.state.manager = manager
+
+    def network_info(message: str = "") -> dict:
+        current = store.load_settings()
+        saved_port = int(current.get("port", 8080))
+        tailscale = tailscale_addresses()
+        lan = [address for address in lan_addresses() if address not in tailscale]
+        return {
+            "active_port": running_port,
+            "saved_port": saved_port,
+            "restart_required": saved_port != running_port,
+            "bind_host": str(current.get("bind_host", "0.0.0.0")),
+            "local_urls": [f"http://127.0.0.1:{running_port}"],
+            "lan_urls": [f"http://{address}:{running_port}" for address in lan],
+            "tailscale_urls": [f"http://{address}:{running_port}" for address in tailscale],
+            "message": message,
+            "platform": platform.system(),
+        }
 
     @app.get("/health")
     async def health() -> dict:
@@ -195,6 +225,35 @@ def create_app(store: ConfigStore | None = None, manager: CameraManager | None =
             "requires_admin": not ok and current["platform"] == "Linux",
             "command": autostart_terminal_command(root, payload.enabled) if not ok else "",
         }
+
+    @app.get("/api/network")
+    async def get_network(_: None = Depends(require_auth)) -> dict:
+        return network_info()
+
+    @app.post("/api/network")
+    async def set_network(payload: NetworkPayload, _: None = Depends(require_csrf)) -> dict:
+        current = store.load_settings()
+        bind_host = str(current.get("bind_host", "0.0.0.0"))
+        if payload.mode == "automatic":
+            selected = await run_in_threadpool(lambda: automatic_port(bind_host))
+            message = f"Port {selected} was selected automatically and saved for the next launch."
+        else:
+            value = payload.port.strip()
+            if not is_valid_custom_port(value):
+                raise HTTPException(status_code=422, detail=INVALID_PORT_MESSAGE)
+            selected = int(value)
+            available = selected == running_port or await run_in_threadpool(
+                lambda: is_port_available(bind_host, selected)
+            )
+            if not available:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Port {selected} is already occupied. Enter another port or choose automatic selection.",
+                )
+            message = f"Port {selected} was saved as the preferred port for the next launch."
+        current["port"] = selected
+        store.save_settings(current)
+        return network_info(message)
 
     @app.post("/api/cameras", status_code=201)
     async def add_camera(payload: CameraPayload, _: None = Depends(require_csrf)) -> dict:

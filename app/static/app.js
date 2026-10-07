@@ -1,6 +1,6 @@
 "use strict";
 
-const state = { csrf: "", cameras: [], autostart: null, hidden: new Set(JSON.parse(localStorage.getItem("hiddenCameras") || "[]")) };
+const state = { csrf: "", cameras: [], autostart: null, network: null, hidden: new Set(JSON.parse(localStorage.getItem("hiddenCameras") || "[]")) };
 const recordings = new Map();
 const $ = (selector) => document.querySelector(selector);
 const grid = $("#camera-grid");
@@ -210,6 +210,52 @@ async function changeAutostart(enabled) {
   }
 }
 
+function renderNetwork(info) {
+  state.network = info;
+  $("#network-port").value = String(info.saved_port);
+  $("#network-status").textContent = `Active port: ${info.active_port} · Saved preferred port: ${info.saved_port} · Bind address: ${info.bind_host}`;
+  const urls = $("#network-urls");
+  urls.replaceChildren();
+  const groups = [
+    ["Local", info.local_urls],
+    ["LAN", info.lan_urls],
+    ["Tailscale", info.tailscale_urls],
+  ];
+  for (const [label, values] of groups) {
+    if (!values.length) {
+      const item = document.createElement("li"); item.textContent = `${label}: not detected`; urls.append(item); continue;
+    }
+    for (const value of values) {
+      const item = document.createElement("li");
+      const link = document.createElement("a"); link.href = value; link.textContent = `${label}: ${value}`; link.target = "_blank"; link.rel = "noreferrer";
+      item.append(link); urls.append(item);
+    }
+  }
+  $("#network-restart").hidden = !info.restart_required;
+  $("#network-restart").textContent = info.restart_required
+    ? `Restart Multi Camera Viewer to begin using port ${info.saved_port}. This page remains available on port ${info.active_port} until then.`
+    : "";
+  if (info.message) showToast(info.message);
+}
+
+async function refreshNetwork() {
+  try { renderNetwork(await api("/api/network")); }
+  catch (error) { $("#network-status").textContent = error.message; }
+}
+
+async function saveNetwork(mode) {
+  const buttons = [$("#network-save"), $("#network-auto")];
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    const info = await api("/api/network", {
+      method: "POST",
+      body: JSON.stringify({ mode, port: $("#network-port").value }),
+    });
+    renderNetwork(info);
+  } catch (error) { $("#network-status").textContent = error.message; }
+  finally { buttons.forEach(button => { button.disabled = false; }); }
+}
+
 async function refreshCameras(force = false) {
   const next = await api("/api/cameras");
   const changed = force || cameraFingerprint(next) !== cameraFingerprint(state.cameras);
@@ -315,7 +361,7 @@ async function initialise() {
   try {
     const session = await api("/api/session"); state.csrf = session.csrf_token; $("#version").textContent = `v${session.version}`;
     const savedColumns = Number(localStorage.getItem("gridColumns") || 2); $("#grid-size").value = String(savedColumns); document.documentElement.style.setProperty("--grid-columns", savedColumns); $("#grid-output").textContent = `${savedColumns} column${savedColumns === 1 ? "" : "s"}`;
-    await Promise.all([refreshCameras(true), refreshAutostart()]); setInterval(() => refreshCameras().catch(console.error), 2500);
+    await Promise.all([refreshCameras(true), refreshAutostart(), refreshNetwork()]); setInterval(() => refreshCameras().catch(console.error), 2500);
   } catch (error) { console.error(error); }
 }
 
@@ -324,5 +370,6 @@ $("#settings-toggle").addEventListener("click", () => setDrawer(true)); $("#sett
 $("#add-camera").addEventListener("click", () => openCameraDialog()); document.querySelectorAll("[data-add-camera]").forEach(button => button.addEventListener("click", () => openCameraDialog()));
 $("#camera-type").addEventListener("change", updateTypeHelp); $("#camera-resolution").addEventListener("change", updateResolutionFields); $("#camera-form").addEventListener("submit", saveCamera); $("#dialog-close").addEventListener("click", () => dialog.close()); $("#dialog-cancel").addEventListener("click", () => dialog.close());
 $("#autostart-auto").addEventListener("click", () => changeAutostart(true)); $("#autostart-manual").addEventListener("click", () => changeAutostart(false)); $("#autostart-refresh").addEventListener("click", refreshAutostart);
+$("#network-save").addEventListener("click", () => saveNetwork("custom")); $("#network-auto").addEventListener("click", () => saveNetwork("automatic")); $("#network-refresh").addEventListener("click", refreshNetwork);
 $("#detect-usb").addEventListener("click", detectUsb); $("#logout").addEventListener("click", async () => { await api("/logout", { method: "POST" }); location.href = "/login"; });
 initialise();

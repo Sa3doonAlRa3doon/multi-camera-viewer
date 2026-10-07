@@ -17,6 +17,7 @@ Multi Camera Viewer is a self-hosted, authenticated camera dashboard for Windows
 - Save screenshots and recordings directly on the phone or computer viewing the dashboard—not on the Pi.
 - Upgrade program files from GitHub without replacing cameras, credentials, settings, or logs.
 - Show actual local, LAN, and Tailscale URLs at every launch.
+- Change the saved preferred port later in Settings and display all current access URLs.
 - Protect the dashboard with a password, signed session cookies, and CSRF protection.
 - Configure hidden Windows sign-in startup or a Linux systemd boot service.
 - Change between Automatic and Manual startup later from the authenticated Settings drawer.
@@ -120,6 +121,25 @@ Every launch prints and logs:
 Open the printed local URL, usually `http://127.0.0.1:8080`, and sign in using the credentials created during setup. Addresses are detected at launch; none are hard-coded.
 
 For LAN access, open a printed `http://LAN-IP:PORT` URL from another device. Allow the selected TCP port through the operating-system firewall if necessary. For Tailscale, first confirm both devices show as connected in Tailscale, then open the printed `http://TAILSCALE-IP:PORT` URL. Do not forward this HTTP service from an internet router. Use a trusted LAN, Tailscale's encrypted network, or an HTTPS reverse proxy.
+
+### Change the port or get a stable address
+
+An address such as `http://192.168.1.50:1010` contains two separate parts: `192.168.1.50` is the IP address and `1010` is the port. Open **Settings → Network access** to:
+
+- save a preferred four-digit port from 1000 through 9999, including `1010`;
+- automatically choose an available port using the documented port-selection order;
+- see the active port, saved next-launch port, bind address, and actual Local/LAN/Tailscale URLs;
+- refresh the detected addresses after the network or Tailscale changes.
+
+A different saved port takes effect after restarting Multi Camera Viewer. The existing page stays available on its current port until that restart. With Linux systemd autostart enabled, restart using:
+
+```bash
+sudo systemctl restart multi-camera-viewer.service
+```
+
+For manual mode, stop the current foreground process with `Ctrl+C`, then run `./start-multi-camera-viewer.sh` from the installation folder. On Windows, stop and launch the viewer again using its launcher or management commands.
+
+The viewer deliberately binds to `0.0.0.0`, meaning all assigned LAN and Tailscale addresses work at the same time. It cannot safely assign a permanent IP address to the operating system. For a stable LAN address, create a DHCP reservation for the Raspberry Pi in the router. For remote private access, a connected Tailscale device keeps its Tailscale identity and the viewer displays its detected Tailscale IPv4 URL. Port availability is still verified at every launch; if the saved port is occupied, the existing automatic fallback rules apply.
 
 ## Add and use cameras
 
@@ -257,7 +277,7 @@ Linux/Raspberry Pi OS:
 
 ## Verification
 
-The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, authenticated Automatic/Manual startup controls and Linux permission fallback, client-side capture controls, safe update archives, and private-data preservation during updates.
+The automated suite covers port validation and exact selection order, authenticated preferred-port changes, current LAN/Tailscale URL reporting, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, authenticated Automatic/Manual startup controls and Linux permission fallback, client-side capture controls, safe update archives, and private-data preservation during updates.
 
 Run it with:
 

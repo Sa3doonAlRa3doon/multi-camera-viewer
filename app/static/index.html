@@ -49,6 +49,23 @@
       </div>
       <button id="autostart-refresh" type="button" class="wide ghost">Refresh startup status</button>
     </section>
+    <section class="network-settings" aria-labelledby="network-title">
+      <h3 id="network-title">Network access</h3>
+      <p>The IP address identifies the device. The port is the four-digit number after the colon, such as <code>1010</code>.</p>
+      <label>Saved preferred port<input id="network-port" type="text" inputmode="numeric" minlength="4" maxlength="4" pattern="[0-9]{4}" placeholder="1010"></label>
+      <div class="network-actions">
+        <button id="network-save" type="button" class="primary">Save port</button>
+        <button id="network-auto" type="button">Choose automatically</button>
+      </div>
+      <p id="network-status" class="help" role="status">Loading network addresses…</p>
+      <div id="network-restart" class="restart-note" hidden></div>
+      <div class="access-urls">
+        <strong>Current access URLs</strong>
+        <ul id="network-urls"></ul>
+      </div>
+      <p class="help">The viewer listens on all interfaces so LAN and Tailscale work together. For a permanent LAN IP, reserve the Pi's address in your router. Tailscale must already be installed and connected.</p>
+      <button id="network-refresh" type="button" class="wide ghost">Refresh addresses</button>
+    </section>
     <div class="drawer-footer"><button id="logout" class="danger ghost">Sign out</button></div>
   </aside>
   <div id="scrim" class="scrim" hidden></div>

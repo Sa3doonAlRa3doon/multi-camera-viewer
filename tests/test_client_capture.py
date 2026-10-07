@@ -36,3 +36,14 @@ def test_settings_drawer_offers_automatic_and_manual_startup_modes():
     assert 'id="autostart-refresh"' in html
     assert 'api("/api/autostart"' in javascript
     assert 'JSON.stringify({ enabled })' in javascript
+
+
+def test_settings_drawer_offers_saved_port_and_actual_access_urls():
+    html = (ROOT / "app" / "static" / "index.html").read_text(encoding="utf-8")
+    javascript = (ROOT / "app" / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="network-port"' in html
+    assert 'id="network-save"' in html
+    assert 'id="network-auto"' in html
+    assert 'id="network-urls"' in html
+    assert 'api("/api/network"' in javascript
+    assert 'mode, port: $("#network-port").value' in javascript
