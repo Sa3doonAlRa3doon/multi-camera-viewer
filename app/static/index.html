@@ -61,9 +61,17 @@
   <template id="camera-card-template">
     <article class="camera-card">
       <div class="stream-wrap"><img class="stream" alt=""><div class="stream-overlay"><span class="status-dot"></span><span class="status-text">Connecting</span></div></div>
-      <footer><div><h2 class="camera-title"></h2><p class="camera-type"></p></div><button class="fullscreen" title="View fullscreen">Fullscreen</button></footer>
+      <footer>
+        <div><h2 class="camera-title"></h2><p class="camera-type"></p></div>
+        <div class="card-actions">
+          <button class="snapshot" title="Save a picture on this viewing device">Screenshot</button>
+          <button class="record" title="Record on this viewing device">Record</button>
+          <button class="fullscreen" title="View fullscreen">Fullscreen</button>
+        </div>
+      </footer>
     </article>
   </template>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>
 </body>
 </html>

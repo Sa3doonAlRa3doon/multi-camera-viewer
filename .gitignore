@@ -2,6 +2,7 @@
 config/
 data/
 logs/
+backups/
 *.log
 .env
 .env.*

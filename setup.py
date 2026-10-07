@@ -9,11 +9,14 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import venv
 from pathlib import Path
 
-from app.autostart import enable_autostart, linux_service_text
+from app import __version__
+from app.autostart import disable_autostart, enable_autostart, linux_service_text
 from app.config import ConfigStore, new_settings
+from app.network import lan_addresses, tailscale_addresses
 from app.ports import select_port_interactive
 
 SOURCE_ROOT = Path(__file__).resolve().parent
@@ -135,9 +138,14 @@ def ask_credentials() -> tuple[str, str]:
 
 def copy_application(target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(SOURCE_ROOT / "app", target / "app", dirs_exist_ok=True)
-    for filename in ("requirements.txt", "manage.py", "README.md", "SECURITY.md", "LICENSE"):
-        shutil.copy2(SOURCE_ROOT / filename, target / filename)
+    if target.resolve() != SOURCE_ROOT.resolve():
+        shutil.copytree(SOURCE_ROOT / "app", target / "app", dirs_exist_ok=True)
+        for filename in (
+            "VERSION", "requirements.txt", "manage.py", "setup.py", "setup-windows.ps1", "setup-linux.sh",
+            "update-multi-camera-viewer.bat", "update-multi-camera-viewer.sh",
+            "README.md", "SECURITY.md", "LICENSE",
+        ):
+            shutil.copy2(SOURCE_ROOT / filename, target / filename)
     (target / "config").mkdir(exist_ok=True)
     (target / "data").mkdir(exist_ok=True)
     (target / "logs").mkdir(exist_ok=True)
@@ -171,6 +179,9 @@ def write_launchers(target: Path, python: Path) -> None:
         path = target / "start-multi-camera-viewer.sh"
         path.write_text(launcher, encoding="utf-8")
         path.chmod(0o755)
+        updater = target / "update-multi-camera-viewer.sh"
+        if updater.exists():
+            updater.chmod(0o755)
         service = target / "multi-camera-viewer.service"
         service.write_text(linux_service_text(target), encoding="utf-8")
 
@@ -189,13 +200,31 @@ def protect_private_storage(target: Path) -> None:
             folder.chmod(0o700)
 
 
+def access_summary(port: int) -> list[str]:
+    tailscale = tailscale_addresses()
+    lan = [address for address in lan_addresses() if address not in tailscale]
+    lines = [f"Local access URL: http://127.0.0.1:{port}"]
+    lines.extend(f"LAN access URL: http://{address}:{port}" for address in lan)
+    if not lan:
+        lines.append("LAN access URL: no active LAN address detected")
+    lines.extend(f"Tailscale access URL: http://{address}:{port}" for address in tailscale)
+    if not tailscale:
+        lines.append(
+            "Tailscale access URL: none detected. Install and connect Tailscale on this computer and the viewing device, then restart the viewer."
+        )
+    return lines
+
+
 def main() -> int:
-    print("Multi Camera Viewer v1.0.0 setup")
+    print(f"Multi Camera Viewer v{__version__} setup")
     if sys.version_info < (3, 10):
         print("Python 3.10 or newer is required.", file=sys.stderr)
         return 2
     target = choose_install_folder()
     print(f"Application files, private configuration, and logs will be kept in: {target}")
+    print("Choose Y for background startup, or N to use the manual launcher whenever you want the viewer.")
+    auto = ask_yes_no("Start Multi Camera Viewer automatically when this computer starts? [Y/N] ")
+    print("Automatic startup selected." if auto else "Manual startup selected; no background autostart will be registered.")
     copy_application(target)
     store = ConfigStore(target)
     if store.settings_path.exists():
@@ -210,7 +239,6 @@ def main() -> int:
     python = create_environment(target)
     write_launchers(target, python)
     protect_private_storage(target)
-    auto = ask_yes_no("Start Multi Camera Viewer automatically when this computer starts? [Y/N] ")
     if auto:
         ok, detail = enable_autostart(target)
         settings["autostart"] = ok
@@ -221,7 +249,18 @@ def main() -> int:
             print("Use the manual launcher shown below, then see README.md for repair steps.")
         else:
             print(f"Automatic startup configured: {detail}")
+            if os.name == "nt":
+                subprocess.Popen(
+                    ["wscript.exe", str(target / "start-hidden.vbs")],
+                    cwd=target,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                time.sleep(1)
+                print("Multi Camera Viewer was also started now in the background.")
     else:
+        if settings.get("autostart"):
+            ok, detail = disable_autostart(target, remove=True)
+            print("Previous autostart registration removed." if ok else f"Could not remove previous autostart registration: {detail}")
         settings["autostart"] = False
         settings["autostart_kind"] = "none"
         store.save_settings(settings)
@@ -231,6 +270,12 @@ def main() -> int:
     print(f"Stop a foreground launch with Ctrl+C, or run: {python} {target / 'manage.py'} stop")
     print(f"Private configuration: {target / 'config'} and {target / 'data'}")
     print(f"Logs: {target / 'logs'}")
+    print("\nAccess information:")
+    for line in access_summary(int(store.load_settings()["port"])):
+        print(line)
+    if not auto:
+        print("These URLs become active after you run the manual launcher.")
+    print("Tailscale must already be installed and connected on both devices. No IP address is hard-coded.")
     return 0
 
 

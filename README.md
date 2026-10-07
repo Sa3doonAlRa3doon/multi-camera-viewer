@@ -12,6 +12,8 @@ Multi Camera Viewer is a self-hosted, authenticated camera dashboard for Windows
 - Convert every working source to browser-compatible MJPEG locally.
 - Reconnect failed cameras independently with an increasing retry delay.
 - Preserve camera and port settings across restarts.
+- Save screenshots and recordings directly on the phone or computer viewing the dashboard—not on the Pi.
+- Upgrade program files from GitHub without replacing cameras, credentials, settings, or logs.
 - Show actual local, LAN, and Tailscale URLs at every launch.
 - Protect the dashboard with a password, signed session cookies, and CSRF protection.
 - Configure hidden Windows sign-in startup or a Linux systemd boot service.
@@ -36,10 +38,10 @@ The Linux setup script installs `python3-venv`, `python3-pip`, and the distribut
    powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
    ```
 
-4. Choose the installation folder, port, administrator username/password, and autostart preference.
+4. Choose the installation folder, automatic or manual startup, port, and administrator username/password. The automatic/manual question is shown before dependencies are installed.
 5. If autostart was declined, double-click `start-multi-camera-viewer.bat` in the selected installation folder. Keep that window open; press `Ctrl+C` to stop it.
 
-The installer reads the Windows Known Folder location for Documents, so redirected and OneDrive-backed Documents folders are supported. It then checks likely OneDrive and user locations for an existing folder named `Documents`. If none is found, it requires you to enter a folder instead of silently choosing another location.
+The installer reads the Windows Known Folder location for Documents, so redirected and OneDrive-backed Documents folders are supported. It then checks likely OneDrive and user locations for an existing folder named `Documents`. If none is found, it requires you to enter a folder instead of silently choosing another location. At completion it prints the local URL, every detected LAN URL, and every detected Tailscale URL. Selecting automatic startup also starts the Windows viewer immediately in the background.
 
 Windows autostart uses Task Scheduler with an `ONLOGON` trigger and a hidden `wscript.exe` launcher. It starts when the installing user signs in, not before sign-in and not at early system boot. No terminal window must remain open.
 
@@ -53,6 +55,8 @@ chmod +x setup-linux.sh
 ```
 
 The script may request `sudo` to install apt dependencies and, when autostart is selected, to register `/etc/systemd/system/multi-camera-viewer.service`. The service runs as the user who performed setup, waits for the network, restarts after failures, and starts during normal system boot.
+
+The setup asks about automatic or manual startup before installing dependencies. When systemd autostart is selected, `systemctl enable --now` starts the viewer immediately and at future boots. The final summary prints the actual detected local, LAN, and Tailscale URLs.
 
 If autostart was declined, start manually:
 
@@ -75,6 +79,7 @@ The installer offers `<Documents>/MultiCameraViewer` and accepts a custom folder
 | `data/server.pid` | Running-process marker |
 | `logs/multi-camera-viewer.log` | Rotating application log |
 | `logs/autostart.log` | Additional Windows hidden-start output |
+| `backups/` | Private updater backups retained on the server |
 
 `config/`, `data/`, `logs/`, `.env*`, and virtual environments are excluded from Git. Do not copy private runtime files into the public repository. Passwords are salted and hashed; network-camera credentials are stored locally because they are needed to reconnect to those cameras. The API redacts credentials and URL query values.
 
@@ -133,6 +138,49 @@ Use the full HTTP/HTTPS MJPEG or video-stream URL. Snapshot-only JPEG URLs are n
 
 Use each camera's **Show in grid** switch to swap visible cameras without deleting them. Move the Grid slider from one to four columns. Choose **Fullscreen** on a card for a single-camera view; exit with `Esc`.
 
+### Screenshots and recordings
+
+Each camera card has **Screenshot**, **Record**, and **Fullscreen** controls.
+
+- **Screenshot** saves a timestamped JPEG through the browser's download system.
+- **Record** starts a browser-side WebM recording. Choose **Stop & save** to finish and automatically download it.
+- The files are created on the device viewing the dashboard—your laptop, phone, or tablet. They are not uploaded to or stored on the Raspberry Pi.
+- The browser controls the final Downloads folder and may show its normal download prompt. MediaRecorder/WebM support is required for recording; current Chromium, Chrome, Edge, and Firefox versions are recommended.
+
+## Upgrade without losing data
+
+After installing version 1.1.0 or newer, use the updater inside the selected installation folder.
+
+Windows: double-click `update-multi-camera-viewer.bat`, or run:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check-update
+.\.venv\Scripts\python.exe manage.py update
+```
+
+Linux/Raspberry Pi OS:
+
+```bash
+./update-multi-camera-viewer.sh
+# or:
+./.venv/bin/python manage.py check-update
+./.venv/bin/python manage.py update
+```
+
+The updater compares the installed `VERSION` with the version on this repository's `main` branch. When a newer semantic version is available, it:
+
+1. Stops the running viewer safely.
+2. Downloads the GitHub source archive over HTTPS and validates its layout and version.
+3. Creates code and private-data ZIP backups under `backups/`.
+4. Replaces program files only. It never replaces `config/`, `data/`, or `logs/`.
+5. Installs updated Python dependencies.
+6. Restores the previous code automatically if dependency installation fails.
+7. Restarts the viewer when it was running before the update.
+
+For an existing 1.0.0 installation that does not yet have the updater, download the current repository and run the current setup script once, selecting the same installation folder. Existing private settings and cameras are detected and preserved. Future versions can then use the update launcher.
+
+To publish a new version as the maintainer, update the root `VERSION` file to a higher `major.minor.patch` value, test, and publish all changes together to `main`. Do not publish a new `VERSION` value before its matching code is present.
+
 ## Manual control and autostart
 
 Run these commands from the selected installation folder with its private Python interpreter.
@@ -168,6 +216,9 @@ Linux/Raspberry Pi OS:
 - **High Raspberry Pi CPU use:** reduce camera resolution/frame rate at the camera, use substreams, or display fewer simultaneous feeds. Every active source is decoded and re-encoded as MJPEG.
 - **USB camera is busy:** close video-call, browser, or recording applications that may own it, then refresh detection or restart the viewer.
 - **Remote page does not open:** confirm the printed LAN/Tailscale address is still assigned, the service is running, and the selected port is allowed through the host firewall.
+- **No Tailscale URL is printed:** install Tailscale separately, sign in, connect it on both the Pi/server and viewing device, and restart Multi Camera Viewer. The application binds to `0.0.0.0`, so a detected Tailscale IPv4 address is immediately usable unless a host firewall blocks the selected port.
+- **Recording does not start:** use a current Chromium/Chrome/Edge/Firefox browser. Screenshot still works where canvas downloads are supported. Safari's WebM recording support varies by version.
+- **Updater reports no update:** confirm the repository's root `VERSION` was increased and all matching code was published to `main`.
 - **Saved port changed:** another process owned it at launch. Read the startup output/log for the automatically selected and saved fallback.
 - **Autostart fails:** inspect `logs/multi-camera-viewer.log`; on Linux also run `sudo systemctl status multi-camera-viewer.service` and `sudo journalctl -u multi-camera-viewer.service`.
 
@@ -182,7 +233,7 @@ Linux/Raspberry Pi OS:
 
 ## Verification
 
-The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, two concurrent capture workers, disconnect/reconnect recovery, and generated Windows/systemd autostart definitions.
+The automated suite covers port validation and exact selection order, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, client-side capture controls, safe update archives, and private-data preservation during updates.
 
 Run it with:
 

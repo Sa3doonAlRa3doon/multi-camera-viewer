@@ -1,3 +1,14 @@
 """Multi Camera Viewer application package."""
 
-__version__ = "1.0.0"
+from pathlib import Path
+
+
+def _installed_version() -> str:
+    version_file = Path(__file__).resolve().parent.parent / "VERSION"
+    try:
+        return version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "1.1.0"
+
+
+__version__ = _installed_version()

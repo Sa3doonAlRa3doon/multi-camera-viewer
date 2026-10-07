@@ -1,6 +1,7 @@
 "use strict";
 
 const state = { csrf: "", cameras: [], hidden: new Set(JSON.parse(localStorage.getItem("hiddenCameras") || "[]")) };
+const recordings = new Map();
 const $ = (selector) => document.querySelector(selector);
 const grid = $("#camera-grid");
 const dialog = $("#camera-dialog");
@@ -27,6 +28,93 @@ function saveHidden() { localStorage.setItem("hiddenCameras", JSON.stringify([..
 
 function streamUrl(camera) { return `/api/cameras/${encodeURIComponent(camera.id)}/stream?t=${Date.now()}`; }
 
+function showToast(message) {
+  const toast = $("#toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.remove("show"), 3500);
+}
+
+function safeFilename(name) {
+  return name.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "camera";
+}
+
+function timestamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function captureCanvas(image) {
+  if (!image.naturalWidth || !image.naturalHeight) throw new Error("Wait for the camera image to appear first.");
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function saveScreenshot(camera, image) {
+  try {
+    const canvas = captureCanvas(image);
+    canvas.toBlob(blob => {
+      if (!blob) return showToast("This browser could not create the screenshot.");
+      const filename = `${safeFilename(camera.name)}-${timestamp()}.jpg`;
+      downloadBlob(blob, filename);
+      showToast(`Screenshot saved on this viewing device: ${filename}`);
+    }, "image/jpeg", 0.94);
+  } catch (error) { showToast(error.message); }
+}
+
+function finishRecording(cameraId) {
+  const active = recordings.get(cameraId);
+  if (active && active.recorder.state !== "inactive") active.recorder.stop();
+}
+
+function toggleRecording(camera, image, button) {
+  if (recordings.has(camera.id)) return finishRecording(camera.id);
+  if (typeof MediaRecorder === "undefined") return showToast("Recording is not supported by this browser.");
+  let canvas;
+  try { canvas = captureCanvas(image); } catch (error) { return showToast(error.message); }
+  if (typeof canvas.captureStream !== "function") return showToast("Canvas recording is not supported by this browser.");
+  const stream = canvas.captureStream(15);
+  const supported = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"]
+    .find(type => MediaRecorder.isTypeSupported(type));
+  let recorder;
+  try { recorder = new MediaRecorder(stream, supported ? { mimeType: supported } : undefined); }
+  catch (_) { return showToast("This browser could not start a recording."); }
+  const chunks = [];
+  const draw = () => {
+    if (image.naturalWidth) canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  };
+  const timer = setInterval(draw, 66);
+  recorder.addEventListener("dataavailable", event => { if (event.data.size) chunks.push(event.data); });
+  recorder.addEventListener("stop", () => {
+    clearInterval(timer);
+    stream.getTracks().forEach(track => track.stop());
+    recordings.delete(camera.id);
+    button.textContent = "Record";
+    button.classList.remove("recording");
+    if (!chunks.length) return showToast("The recording did not contain any video data.");
+    const filename = `${safeFilename(camera.name)}-${timestamp()}.webm`;
+    downloadBlob(new Blob(chunks, { type: recorder.mimeType || "video/webm" }), filename);
+    showToast(`Recording saved on this viewing device: ${filename}`);
+  });
+  recordings.set(camera.id, { recorder, timer });
+  button.textContent = "Stop & save";
+  button.classList.add("recording");
+  recorder.start(1000);
+  showToast("Recording on this viewing device. Nothing is being saved on the Pi.");
+}
+
 function renderGrid() {
   grid.replaceChildren();
   const visible = state.cameras.filter(camera => camera.enabled && !state.hidden.has(camera.id));
@@ -41,6 +129,8 @@ function renderGrid() {
     image.addEventListener("error", () => setTimeout(() => { image.src = streamUrl(camera); }, 2000));
     card.querySelector(".camera-title").textContent = camera.name;
     card.querySelector(".camera-type").textContent = camera.source_type === "usb" ? "USB camera" : `${camera.source_type.toUpperCase()} stream`;
+    card.querySelector(".snapshot").addEventListener("click", () => saveScreenshot(camera, image));
+    card.querySelector(".record").addEventListener("click", event => toggleRecording(camera, image, event.currentTarget));
     card.querySelector(".fullscreen").addEventListener("click", () => card.requestFullscreen?.());
     grid.append(card);
   }
