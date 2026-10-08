@@ -332,9 +332,43 @@ Windows runtime and browser checks are performed before release. GitHub Actions 
 
 ## Uninstall
 
-1. Run `manage.py remove-autostart` using the platform command above.
-2. Run `manage.py stop` if the server is still running.
-3. Back up `data/cameras.json` only if you intentionally want to retain its private camera definitions and credentials.
-4. Delete the selected `MultiCameraViewer` installation folder. The original cloned/downloaded repository can be deleted separately.
+Uninstalling removes the application, its saved cameras, login settings, logs, updater backups, and local private environment. Screenshots and recordings downloaded through the browser are stored on the viewing device and are not removed. Tailscale is separate software and is not changed.
 
-The installer changes no global configuration except apt packages requested by `setup-linux.sh` and the autostart registration you approve.
+Before deleting anything, use the actual installation folder printed by setup. If you want to reinstall later with the same cameras, make a private backup of `config/` and `data/`; these files can contain camera credentials and must not be uploaded publicly.
+
+### Raspberry Pi OS/Linux
+
+For the default installation used in the examples:
+
+```bash
+cd /home/pi5/Documents/MultiCameraViewer
+./.venv/bin/python manage.py remove-autostart
+./.venv/bin/python manage.py stop
+```
+
+`remove-autostart` stops, disables, and removes `/etc/systemd/system/multi-camera-viewer.service`. After the commands finish, close any terminal whose current directory is inside the application folder. On Raspberry Pi OS Desktop, delete `/home/pi5/Documents/MultiCameraViewer` with the file manager so it can go to the Trash.
+
+On a terminal-only Pi, permanently delete only after verifying the exact folder shown by `pwd`:
+
+```bash
+cd /home/pi5/Documents/MultiCameraViewer
+pwd
+# Continue only if the output is exactly /home/pi5/Documents/MultiCameraViewer
+cd /home/pi5/Documents
+rm -rf -- MultiCameraViewer
+```
+
+If setup used a different folder or username, substitute that exact path. Do not run the final deletion command from an unverified location.
+
+### Windows
+
+Open PowerShell in the selected installation folder and run:
+
+```powershell
+.\.venv\Scripts\python.exe manage.py remove-autostart
+.\.venv\Scripts\python.exe manage.py stop
+```
+
+Close PowerShell and any viewer pages, then delete the selected `MultiCameraViewer` folder with File Explorer. Windows normally moves it to the Recycle Bin. The original cloned or downloaded repository can be deleted separately if it is in another folder.
+
+The setup-installed apt packages are not automatically removed because other Linux applications may use them. The installer changes no other global configuration beyond those packages and the autostart registration you approved.
