@@ -199,7 +199,7 @@ def create_app(
 
     @app.get("/api/autostart")
     async def get_autostart(_: None = Depends(require_auth)) -> dict:
-        return autostart_info()
+        return autostart_info(store.root)
 
     @app.post("/api/autostart")
     async def set_autostart(payload: AutostartPayload, _: None = Depends(require_csrf)) -> dict:
@@ -212,18 +212,29 @@ def create_app(
             ok, detail = await run_in_threadpool(
                 lambda: disable_autostart(root, stop_now=False, non_interactive=True)
             )
-        current = autostart_info()
+        current = autostart_info(root)
         if ok:
             settings = store.load_settings()
             settings["autostart"] = bool(current["enabled"])
             settings["autostart_kind"] = str(current["status"]) if current["enabled"] else "none"
             store.save_settings(settings)
+        needs_linux_repair = (
+            payload.enabled
+            and current["platform"] == "Linux"
+            and not bool(current.get("healthy"))
+        )
+        command = autostart_terminal_command(root, payload.enabled) if (not ok or needs_linux_repair) else ""
+        if needs_linux_repair and ok:
+            detail = (
+                "Automatic startup is registered, but the service is not running. "
+                "Run the displayed terminal command once to stop the manual copy, start systemd, and verify it."
+            )
         return {
             **current,
             "changed": ok,
             "message": detail or ("Automatic startup enabled." if payload.enabled else "Manual startup selected."),
-            "requires_admin": not ok and current["platform"] == "Linux",
-            "command": autostart_terminal_command(root, payload.enabled) if not ok else "",
+            "requires_admin": (not ok or needs_linux_repair) and current["platform"] == "Linux",
+            "command": command,
         }
 
     @app.get("/api/network")

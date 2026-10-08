@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.__main__ import bind_listener
 from app.autostart import (
+    autostart_info,
     autostart_terminal_command,
     disable_autostart,
     enable_autostart,
@@ -25,6 +26,7 @@ def test_linux_autostart_is_boot_system_service_with_restart(tmp_path):
     assert "User=camera-user" in text
     assert "WantedBy=multi-user.target" in text
     assert "Restart=on-failure" in text
+    assert "StartLimitIntervalSec=0" in text
     assert "After=network-online.target" in text
     assert 'WorkingDirectory="' in text
     assert 'ExecStart="' in text
@@ -46,6 +48,58 @@ def test_web_linux_autostart_change_is_noninteractive_and_does_not_start_duplica
     assert all(command[:2] == ["sudo", "-n"] for command in calls)
     assert "enable" in calls[-1]
     assert "--now" not in calls[-1]
+    assert (tmp_path / "multi-camera-viewer.service").is_file()
+
+
+def test_linux_start_now_is_enabled_started_and_verified(monkeypatch, tmp_path):
+    calls = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        if command[:2] == ["systemctl", "is-enabled"]:
+            return Result(stdout="enabled\n")
+        if command[:2] == ["systemctl", "is-active"]:
+            return Result(stdout="active\n")
+        return Result()
+
+    monkeypatch.setattr("app.autostart.platform.system", lambda: "Linux")
+    monkeypatch.setattr("app.autostart.subprocess.run", run)
+    monkeypatch.setattr("app.autostart.time.sleep", lambda _seconds: None)
+    ok, detail = enable_autostart(tmp_path, start_now=True)
+    assert ok is True
+    assert "running now" in detail
+    assert any("--now" in command for command in calls)
+    assert "ExecStart=" in (tmp_path / "multi-camera-viewer.service").read_text(encoding="utf-8")
+
+
+def test_linux_status_exposes_enabled_but_failed_service_and_repair_command(monkeypatch, tmp_path):
+    class Result:
+        def __init__(self, returncode, stdout):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    def run(command, **_kwargs):
+        if command[:2] == ["systemctl", "is-enabled"]:
+            return Result(0, "enabled\n")
+        if command[:2] == ["systemctl", "is-active"]:
+            return Result(3, "failed\n")
+        raise AssertionError(command)
+
+    monkeypatch.setattr("app.autostart.platform.system", lambda: "Linux")
+    monkeypatch.setattr("app.autostart.subprocess.run", run)
+    info = autostart_info(tmp_path)
+    assert info["enabled"] is True
+    assert info["active"] is False
+    assert info["healthy"] is False
+    assert info["service_state"] == "failed"
+    assert "manage.py enable-autostart" in str(info["command"])
 
 
 def test_web_manual_mode_keeps_current_linux_viewer_running(monkeypatch, tmp_path):

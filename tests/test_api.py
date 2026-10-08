@@ -100,7 +100,7 @@ def test_camera_video_settings_are_validated(tmp_path):
 def test_autostart_can_be_changed_from_authenticated_settings(monkeypatch, tmp_path):
     current = {"enabled": False}
 
-    def info():
+    def info(*_args):
         enabled = current["enabled"]
         return {
             "enabled": enabled,
@@ -135,7 +135,7 @@ def test_linux_autostart_permission_fallback_is_returned(monkeypatch, tmp_path):
     monkeypatch.setattr(
         main_module,
         "autostart_info",
-        lambda: {
+        lambda *_args: {
             "enabled": False,
             "status": "disabled",
             "platform": "Linux",

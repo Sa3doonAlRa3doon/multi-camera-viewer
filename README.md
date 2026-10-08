@@ -19,7 +19,7 @@ Multi Camera Viewer is a self-hosted, authenticated camera dashboard for Windows
 - Show actual local, LAN, and Tailscale URLs at every launch.
 - Change the saved preferred port later in Settings and display all current access URLs.
 - Protect the dashboard with a password, signed session cookies, and CSRF protection.
-- Configure hidden Windows sign-in startup or a Linux systemd boot service.
+- Configure hidden Windows sign-in startup or a Linux systemd boot service, and verify Linux is both boot-enabled and running.
 - Change between Automatic and Manual startup later from the authenticated Settings drawer.
 
 ## Requirements
@@ -60,7 +60,7 @@ chmod +x setup-linux.sh
 
 The script may request `sudo` to install apt dependencies and, when autostart is selected, to register `/etc/systemd/system/multi-camera-viewer.service`. The service runs as the user who performed setup, waits for the network, restarts after failures, and starts during normal system boot.
 
-The setup asks about automatic or manual startup before installing dependencies. When systemd autostart is selected, `systemctl enable --now` starts the viewer immediately and at future boots. The final summary prints the actual detected local, LAN, and Tailscale URLs.
+The setup asks about automatic or manual startup before installing dependencies. When systemd autostart is selected, `systemctl enable --now` starts the viewer immediately and at future boots. Setup now verifies that the service stays active; merely having an enabled but failed unit is reported as an error. The final summary prints the actual detected local, LAN, and Tailscale URLs.
 
 If autostart was declined, start manually:
 
@@ -209,7 +209,7 @@ The updater compares the installed `VERSION` with the version on this repository
 4. Replaces program files only. It never replaces `config/`, `data/`, or `logs/`.
 5. Installs updated Python dependencies.
 6. Restores the previous code automatically if dependency installation fails.
-7. Restarts the viewer when it was running before the update.
+7. Restarts the viewer when it was running before the update. On Linux, an enabled autostart installation is regenerated, started through systemd, and health-checked instead of being silently restarted as a manual process.
 
 For an existing 1.0.0 installation that does not yet have the updater, download the current repository and run the current setup script once, selecting the same installation folder. Existing private settings and cameras are detected and preserved. Future versions can then use the update launcher.
 
@@ -217,9 +217,9 @@ To publish a new version as the maintainer, update the root `VERSION` file to a 
 
 ## Manual control and autostart
 
-Open the right-side **Settings** drawer and use **Automatic startup → Automatic** or **Manual** to change the startup mode at any time. The status is read from the real Windows Task Scheduler entry or Linux systemd service—not only from a saved preference. Changing the mode does not interrupt the currently running viewer and takes effect on the next sign-in or boot.
+Open the right-side **Settings** drawer and use **Automatic startup → Automatic** or **Manual** to change the startup mode at any time. The status is read from the real Windows Task Scheduler entry or Linux systemd service—not only from a saved preference. Linux separately reports whether the service is enabled for boot and whether it is actually running. An enabled-but-inactive or failed service is clearly marked **repair required**.
 
-Windows can normally apply the selection immediately for the current user. Installing or changing a system service on Raspberry Pi OS/Linux requires administrator approval. The web Settings panel first attempts a safe non-interactive change; if approval is needed, it displays the exact command to run in the Pi terminal. Run that command, then select **Refresh startup status**. The terminal command uses the installed folder and its private Python environment.
+Windows can normally apply the selection immediately for the current user. Installing or changing a system service on Raspberry Pi OS/Linux requires administrator approval. The web Settings panel first attempts a safe non-interactive change; if approval or repair is needed, it displays the exact command to run in the Pi terminal. That command stops a manually running copy, rebuilds the unit with the current installation path, enables and starts it, and verifies that it remains active. The browser can disconnect briefly while ownership moves to systemd. Reopen the viewer and select **Refresh startup status**. The terminal command uses the installed folder and its private Python environment.
 
 The same controls remain available from a terminal. Run these commands from the selected installation folder with its private Python interpreter.
 
@@ -251,7 +251,24 @@ Linux/Raspberry Pi OS:
 ./.venv/bin/python manage.py remove-autostart
 ```
 
-`disable-autostart` disables and stops the registration. Add `--keep-running` to change future startup without stopping the current Linux systemd service. `remove-autostart` also removes it; on Linux it deletes the systemd unit after disabling it. On Windows both remove the scheduled task because Task Scheduler has no useful retained-but-disabled workflow in this installer.
+On Linux, `enable-autostart` is also the repair command: success means the unit is enabled for boot and the viewer is currently running under systemd. `disable-autostart` disables and stops the registration. Add `--keep-running` to change future startup without stopping the current Linux systemd service. `remove-autostart` also removes it; on Linux it deletes the systemd unit after disabling it. On Windows both remove the scheduled task because Task Scheduler has no useful retained-but-disabled workflow in this installer.
+
+### Repair an existing Raspberry Pi/Linux installation
+
+Upgrade first, then run the repair command from your actual selected installation folder:
+
+```bash
+cd ~/Documents/MultiCameraViewer
+./update-multi-camera-viewer.sh
+./.venv/bin/python manage.py enable-autostart
+./.venv/bin/python manage.py status
+```
+
+Use the folder printed by setup or displayed in the startup information if you chose a different location. A successful repair prints `enabled at boot and running now`. Confirm it directly with:
+
+```bash
+sudo systemctl status multi-camera-viewer.service --no-pager --full
+```
 
 ## Troubleshooting
 
@@ -264,7 +281,7 @@ Linux/Raspberry Pi OS:
 - **Recording does not start:** use a current Chromium/Chrome/Edge/Firefox browser. Screenshot still works where canvas downloads are supported. Safari's WebM recording support varies by version.
 - **Updater reports no update:** confirm the repository's root `VERSION` was increased and all matching code was published to `main`.
 - **Saved port changed:** another process owned it at launch. Read the startup output/log for the automatically selected and saved fallback.
-- **Autostart fails:** inspect `logs/multi-camera-viewer.log`; on Linux also run `sudo systemctl status multi-camera-viewer.service` and `sudo journalctl -u multi-camera-viewer.service`.
+- **Autostart is enabled but did not start:** run `./.venv/bin/python manage.py enable-autostart` from the selected installation folder. It rebuilds the unit, resolves a manual-process port conflict, starts systemd, and verifies the result. Then inspect `logs/multi-camera-viewer.log`, `sudo systemctl status multi-camera-viewer.service --no-pager --full`, or `sudo journalctl -u multi-camera-viewer.service -n 100 --no-pager` if it still fails.
 
 ## Compatibility limitations
 
@@ -277,7 +294,7 @@ Linux/Raspberry Pi OS:
 
 ## Verification
 
-The automated suite covers port validation and exact selection order, authenticated preferred-port changes, current LAN/Tailscale URL reporting, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, authenticated Automatic/Manual startup controls and Linux permission fallback, client-side capture controls, safe update archives, and private-data preservation during updates.
+The automated suite covers port validation and exact selection order, authenticated preferred-port changes, current LAN/Tailscale URL reporting, occupied saved-port fallback/persistence, settings persistence, login/CSRF enforcement, credential redaction, camera CRUD, per-camera video setting validation, frame resizing/rotation/flipping, USB capture requests, two concurrent capture workers, disconnect/reconnect recovery, generated Windows/systemd autostart definitions, enabled-versus-active Linux status, start-and-health verification, authenticated Automatic/Manual startup controls and Linux permission fallback, client-side capture controls, safe update archives, and private-data preservation during updates.
 
 Run it with:
 

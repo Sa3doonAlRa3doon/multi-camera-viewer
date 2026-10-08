@@ -10,7 +10,7 @@ from pathlib import Path
 
 import psutil
 
-from app.autostart import autostart_status, disable_autostart, enable_autostart
+from app.autostart import autostart_info, autostart_status, disable_autostart, enable_autostart
 from app.config import ConfigStore, application_home
 from app.updater import NoUpdate, UpdateError, download_and_install, fetch_remote_version, update_available
 from app import __version__
@@ -106,14 +106,13 @@ def main() -> int:
             return 0
         except NoUpdate as exc:
             print(exc)
-            if was_running:
-                start_background(root)
-                print("The viewer was restarted.")
             return 0
         except UpdateError as exc:
             print(exc, file=sys.stderr)
             return 1
     if args.command == "update":
+        startup_before_update = autostart_info(root)
+        linux_autostart = startup_before_update["platform"] == "Linux" and bool(startup_before_update["enabled"])
         was_running = server_is_running(root)
         if was_running and stop_server(root) != 0:
             return 1
@@ -123,20 +122,61 @@ def main() -> int:
             print(f"Application backup: {code_backup}")
             print(f"Private data backup: {data_backup}")
             print("Camera settings, credentials, port, logs, and recordings were not replaced.")
-            if was_running:
+            if linux_autostart:
+                ok, detail = enable_autostart(root, start_now=True)
+                print(detail)
+                if ok:
+                    update_autostart(root, True, detail)
+                    print("The upgraded viewer is running under systemd and remains enabled for boot.")
+                elif was_running:
+                    start_background(root)
+                    print("Systemd repair failed, so the viewer was restored manually. Run manage.py enable-autostart again.")
+            elif was_running:
+                start_background(root)
+                print("The viewer was restarted in the background.")
+            return 0
+        except NoUpdate as exc:
+            print(exc)
+            if linux_autostart:
+                ok, detail = enable_autostart(root, start_now=True)
+                print(detail)
+                if ok:
+                    update_autostart(root, True, detail)
+                elif was_running:
+                    start_background(root)
+                    print("Systemd repair failed, so the viewer was restored manually.")
+            elif was_running:
                 start_background(root)
                 print("The viewer was restarted in the background.")
             return 0
         except UpdateError as exc:
             print(f"Update failed: {exc}", file=sys.stderr)
-            if was_running:
+            if linux_autostart:
+                ok, detail = enable_autostart(root, start_now=True)
+                print(detail)
+                if ok:
+                    update_autostart(root, True, detail)
+                elif was_running:
+                    start_background(root)
+                    print("The existing viewer was restored manually because systemd repair also failed.")
+            elif was_running:
                 start_background(root)
                 print("The existing viewer was restarted.")
             return 1
     if args.command == "enable-autostart":
-        ok, detail = enable_autostart(root, start_now=False)
+        # On Linux this command is also the repair path shown in Settings. Stop
+        # a manually launched copy first so systemd can bind the saved port,
+        # then start and verify the service instead of merely enabling a unit.
+        was_running = server_is_running(root)
+        stopped_for_repair = os.name != "nt" and was_running
+        if stopped_for_repair and stop_server(root) != 0:
+            return 1
+        ok, detail = enable_autostart(root, start_now=os.name != "nt")
         if ok:
             update_autostart(root, True, detail)
+        elif stopped_for_repair:
+            start_background(root)
+            detail += "\nAutomatic startup was not repaired; the viewer was restored in manual mode."
         print(detail)
         return 0 if ok else 1
     remove = args.command == "remove-autostart"

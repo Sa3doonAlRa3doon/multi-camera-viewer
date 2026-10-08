@@ -181,10 +181,14 @@ function renderSettings() {
 function renderAutostart(info) {
   state.autostart = info;
   $("#autostart-description").textContent = info.description;
-  $("#autostart-status").textContent = `Current mode: ${info.enabled ? "Automatic" : "Manual"} (${info.status})`;
+  const repairNeeded = info.platform === "Linux" && info.enabled && !info.healthy;
+  $("#autostart-status").textContent = repairNeeded
+    ? `Repair required: Automatic is enabled for boot, but the service is ${info.service_state}. Run the terminal command below.`
+    : `Current mode: ${info.enabled ? "Automatic" : "Manual"} (${info.status})`;
+  $("#autostart-auto").textContent = repairNeeded ? "Automatic — repair needed" : "Automatic";
   $("#autostart-auto").classList.toggle("selected", info.enabled);
   $("#autostart-manual").classList.toggle("selected", !info.enabled);
-  $("#autostart-auto").disabled = !info.supported || info.enabled;
+  $("#autostart-auto").disabled = !info.supported || (info.enabled && !repairNeeded);
   $("#autostart-manual").disabled = !info.supported || !info.enabled;
   const showCommand = Boolean(info.command);
   $("#autostart-command-wrap").hidden = !showCommand;
