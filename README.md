@@ -270,6 +270,30 @@ Use the folder printed by setup or displayed in the startup information if you c
 sudo systemctl status multi-camera-viewer.service --no-pager --full
 ```
 
+#### One-time repair when upgrading from 1.5.0
+
+Version 1.5.0 generated a quoted `WorkingDirectory` that some Raspberry Pi OS systemd versions reject as a non-absolute path. When updating from 1.5.0 to 1.5.1, the updater can print that old `bad unit file setting` message once after successfully replacing the files because the already-running updater process still has the 1.5.0 code loaded in memory. This does not undo the update or affect private data.
+
+Check that the new version was installed, then run the new repair code as a separate command:
+
+```bash
+cd /home/pi5/Documents/MultiCameraViewer
+cat VERSION
+# VERSION must show 1.5.1 or newer before continuing.
+./.venv/bin/python manage.py enable-autostart
+```
+
+The browser may disconnect briefly while the manual fallback process stops and systemd takes control. Verify both the generated and installed units use an unquoted absolute directory, then check service health:
+
+```bash
+grep '^WorkingDirectory=' multi-camera-viewer.service
+sudo grep '^WorkingDirectory=' /etc/systemd/system/multi-camera-viewer.service
+./.venv/bin/python manage.py status
+sudo systemctl status multi-camera-viewer.service --no-pager --full
+```
+
+The expected unit line is `WorkingDirectory=/home/pi5/Documents/MultiCameraViewer`; the expected status is `enabled and running (system boot)` and `active (running)`.
+
 ## Troubleshooting
 
 - **Camera stays disconnected:** verify its USB device/index or network URL in Settings. Test network reachability and credentials. The status badge shows the latest failure and retry delay.
