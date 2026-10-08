@@ -251,7 +251,7 @@ Linux/Raspberry Pi OS:
 ./.venv/bin/python manage.py remove-autostart
 ```
 
-On Linux, `enable-autostart` is also the repair command: success means the unit is enabled for boot and the viewer is currently running under systemd. `disable-autostart` disables and stops the registration. Add `--keep-running` to change future startup without stopping the current Linux systemd service. `remove-autostart` also removes it; on Linux it deletes the systemd unit after disabling it. On Windows both remove the scheduled task because Task Scheduler has no useful retained-but-disabled workflow in this installer.
+On Linux, `enable-autostart` is also the repair command: it regenerates a systemd-compatible absolute `WorkingDirectory`, and success means the unit is enabled for boot and the viewer is currently running under systemd. `disable-autostart` disables and stops the registration. Add `--keep-running` to change future startup without stopping the current Linux systemd service. `remove-autostart` also removes it; on Linux it deletes the systemd unit after disabling it. On Windows both remove the scheduled task because Task Scheduler has no useful retained-but-disabled workflow in this installer.
 
 ### Repair an existing Raspberry Pi/Linux installation
 

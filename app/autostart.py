@@ -27,6 +27,7 @@ def windows_task_command(root: Path) -> list[str]:
 
 
 def linux_service_text(root: Path, username: str | None = None) -> str:
+    root = root.expanduser().resolve()
     user = username or os.environ.get("SUDO_USER") or getpass.getuser()
     python = root / ".venv" / "bin" / "python"
     return f"""[Unit]
@@ -38,7 +39,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 User={user}
-WorkingDirectory={_systemd_quote(root)}
+WorkingDirectory={root}
 Environment={_systemd_quote(f"MCV_HOME={root}")}
 ExecStart={_systemd_quote(python)} -m app
 Restart=on-failure

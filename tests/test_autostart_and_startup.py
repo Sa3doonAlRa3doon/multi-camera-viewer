@@ -28,8 +28,17 @@ def test_linux_autostart_is_boot_system_service_with_restart(tmp_path):
     assert "Restart=on-failure" in text
     assert "StartLimitIntervalSec=0" in text
     assert "After=network-online.target" in text
-    assert 'WorkingDirectory="' in text
+    assert f"WorkingDirectory={tmp_path.resolve()}" in text
+    assert 'WorkingDirectory="' not in text
     assert 'ExecStart="' in text
+
+
+def test_linux_working_directory_is_not_quoted_for_systemd(tmp_path):
+    root = tmp_path / "Multi Camera Viewer"
+    root.mkdir()
+    text = linux_service_text(root, username="camera-user")
+    assert f"WorkingDirectory={root.resolve()}" in text
+    assert f'WorkingDirectory="{root.resolve()}"' not in text
 
 
 def test_web_linux_autostart_change_is_noninteractive_and_does_not_start_duplicate(monkeypatch, tmp_path):
